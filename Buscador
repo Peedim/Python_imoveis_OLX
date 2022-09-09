@@ -1,0 +1,171 @@
+import pandas as pd
+import numpy as np
+from urllib.request import urlopen as uReq
+import requests
+from bs4 import BeautifulSoup 
+import json
+from difflib import SequenceMatcher
+from selenium import webdriver
+import time
+from datetime import date
+import re
+import openpyxl
+from openpyxl.styles import Color, PatternFill, Font, Border
+
+from selenium import webdriver
+
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+
+import winsound
+
+
+# In[24]:
+
+
+listaJson = []
+options = Options()
+#options.headless = True
+options.add_argument("--disable-notifications")
+options.add_argument("--mute-audio")
+driver = webdriver.Firefox(options=options, executable_path = 'C:\python-geckodriver\geckodriver.exe')
+
+
+# In[21]:
+
+
+def definirParams(auth: "", path: "", referer: ""):
+    PARAMS = {
+            "authority": auth,
+            "method": "GET",
+            "path":path,
+            "scheme": "https",
+            "referer": referer,
+            "sec-fetch-mode": "navigate",
+            "sec-fetch-site": "same-origin",
+            "sec-fetch-user": "?1",
+            "upgrade-insecure-requests": "1",
+            "user-agent": 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.130 Safari/537.36',
+            }
+    return PARAMS
+
+def criarJson(dataPostagem, titulo, preco, url, regiao, regiaoCidade, resumo):
+    print("titulo: " + str(titulo))
+    print("Preco: " + str(preco))
+    print(regiao)
+    print(url)
+    print(resumo)
+    print("----")
+        
+    json = { 
+    "preco": preco,
+    "titulo": titulo,
+    "regiao": regiao,
+    "dataPostagem" : dataPostagem,
+    "regiaoCidade": regiaoCidade, 
+    "resumo" : resumo,
+    "url": url,}
+    
+    #adiciona na lista GERAL de JSON
+    listaJson.append(json)
+    
+def retornarSoupSimples(url):
+    auth = url.split("/")[2]
+    path = url.split("/")[3]
+    referer = url
+    PARAMS = definirParams(auth = auth,path = path, referer = url )
+    page = requests.get(url = url, headers = PARAMS)
+    soup = BeautifulSoup(page.content, 'lxml')
+    return soup
+def clicarBotao(xpath):
+    entToClick = driver.find_element_by_xpath(xpath)
+    driver.execute_script("arguments[0].click();", entToClick)
+def retornarSoupSellenium(url, timeAwait):
+    driver.get(url)
+    time.sleep(timeAwait)
+    result = driver.page_source
+    soup = BeautifulSoup(result, 'lxml')
+    return soup
+
+def scrollDown(rangeD = 30,clickBton = False, xPathBtn = "", timeSleep = 1.5):
+     for a in range(0, rangeD):
+        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);var lenOfPage=document.body.scrollHeight;return lenOfPage;")
+        if clickBton == True:
+            clicarBotao(xPathBtn)
+        time.sleep(timeSleep)
+        print("carregando mais dados...")
+        
+def buscarDadosOLX(pages = 10):
+        
+    for x in range(0, pages):
+        try:
+            print(" LOOP NÚMERO: " + str(x))
+            url = "https://se.olx.com.br/sergipe/aracaju/imoveis/venda?o="+str(x)
+            soup = retornarSoupSimples(url)
+            results = soup.find_all("li", {"class":"sc-1fcmfeb-2"})
+            itens = results
+            print(len(itens))
+                        
+            for a in itens:
+            
+                try:
+                    titulo = a.findAll("h2")[0]["title"]
+                    url = a.findAll("a")[0]["href"]
+                    preco = a.findAll("span", {"aria-label" : re.compile("Preço")})[0].text
+                    preco = preco.split("R$")[1]
+                    preco = float(preco.replace(".", ""))
+                    resumo = a.findAll("h2", {"title" : re.compile(r".*")})[0].text
+                    dataPostagem = a.findAll("span", {"aria-label" : re.compile("Anúncio")})[0].text
+                    regiao = a.findAll("span", {"aria-label" : re.compile("Localização")})[0].text
+                    regiao = regiao.strip()
+                    try:
+                        regiaoCidade = regiao.split(",")[0]
+                    except:
+                        regiaoCidade = regiao
+                        
+                    #da Print e adiciona na lista geral
+                    criarJson(dataPostagem, titulo, preco, url, regiao, regiaoCidade, resumo)
+                    
+                    
+                except Exception as e:
+                    print(url)
+                    print("Erro na OLX no FOR iTENS: ", e)
+                    pass
+                
+        except Exception as e:
+            print("erro na url da OLX:" + url)
+            print(e)
+            pass
+    print(len(listaJson))
+    
+def soundFinal():
+    duration = 2000  # milliseconds
+    freq = 800  # Hz
+    winsound.Beep(freq, duration)
+
+
+# In[25]:
+
+
+buscarDadosOLX(pages = 10)
+
+soundFinal()
+
+# In[26]:
+
+
+#listaJson = []
+df = pd.DataFrame(listaJson)
+df.tail()
+
+
+# In[27]:
+
+
+df = pd.DataFrame(listaJson)
+#df.tail(500)
+
+with pd.ExcelWriter("imoveis.xlsx") as writer:
+    df.to_excel(writer,"Teste")
